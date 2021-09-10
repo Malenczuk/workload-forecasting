@@ -1,8 +1,11 @@
+import pickle
 from datetime import timedelta
 from typing import Callable
 
 import numpy as np
 import pandas as pd
+
+from prometheus import get_series
 
 parameters = [
     "jobs",
@@ -109,3 +112,22 @@ def dataset_split_many_2_many(static, series, n_past, n_future, features, featur
             X.append((X_series[:, :, features], X_static))
             y.append(y_series[:, :, features_pred])
     return X, y
+
+
+def create_dataset(hf_data: pd.DataFrame, dataset: str, df: pd.DataFrame, steps: list, n_pasts: list, n_futures: list,
+                   train_p: float = 0.75, validate_p: float = 0):
+    test_p = 1 - train_p - validate_p
+    train, validate, test = train_validate_test_split(df.select_dtypes(include=np.number), train_percent=train_p, validate_percent=0)
+
+    with open(f"dataset/{dataset}-split_{int(train_p * 100)}_{int(validate_p * 100)}_{int(test_p * 100)}.static", "wb") as f:
+        pickle.dump([train, validate, test], f)
+
+    for step in steps:
+        for n_past, n_future in list(zip(n_pasts, n_futures)):
+            train_series = get_series(hf_data, train, parameters, step, n_past, n_future)
+            validate_series = get_series(hf_data, validate, parameters, step, n_past, n_future)
+            test_series = get_series(hf_data, test, parameters, step, n_past, n_future)
+            with open(
+                f"dataset/{dataset}-split_{int(train_p * 100)}_{int(validate_p * 100)}_{int(test_p * 100)}-step_{step}s-past_{n_past}s-future_{n_future}s.dynamic",
+                "wb") as f:
+                pickle.dump([train_series, validate_series, test_series], f)
